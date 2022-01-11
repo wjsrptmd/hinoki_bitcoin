@@ -1,0 +1,2 @@
+# hinoki_bitcoin
+.
