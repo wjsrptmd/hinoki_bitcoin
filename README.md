@@ -2,10 +2,22 @@
 
 ### 비트코인 자동화 프로그램
 
-### access key
-* `access_key.py` 와 같은 경로에 `my_access.txt` 파일이 있어야 동작함.
+### 생성해야하는 파일
+* my_access.txt
+* order_list.txt
+* context.json
+
+### order_list.txt
+* 최소한 하나 이상의 코인 종목 키 가 있어야 함. 예 `ETH`
+
+### context.json
+* 포맷
+```
+{}
+```
 
 ### my_access.txt
+* 포맷
 ```
 #access/secret
 [access_key]
