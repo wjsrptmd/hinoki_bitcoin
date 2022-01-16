@@ -8,16 +8,14 @@
 * context.json
 
 ### order_list.txt
-* 최소한 하나 이상의 코인 종목 키 가 있어야 함. 예 `ETH`
+* 최소한 하나 이상의 코인 종목 키 가 있어야 함. (예 `ETH`)
 
 ### context.json
-* 포맷
 ```
 {}
 ```
 
 ### my_access.txt
-* 포맷
 ```
 #access/secret
 [access_key]
