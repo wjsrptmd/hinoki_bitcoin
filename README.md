@@ -18,6 +18,6 @@
 ### my_access.txt
 ```
 #access/secret
-[access_key]
+[access]
 [secret]
 ```
