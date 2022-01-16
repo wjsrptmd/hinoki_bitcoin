@@ -199,6 +199,7 @@ def main(argv) :
         if time_to_log_count >= time_to_log_count_limit :
             is_log = True
             time_to_log_count = 0
+            print(' ')
         time_to_log_count = time_to_log_count + 1
 
         allocate_coins(coins, max_allocation, upbit, min_buy)
