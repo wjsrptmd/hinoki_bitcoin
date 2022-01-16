@@ -108,7 +108,7 @@ def is_time_to_buy(coin, cur_price, days, isLog) :
     day_avg_price = get_days_avg_price(df, days)
 
     if isLog :
-        msg = str('coin : %s, 평균가 : %s, 어제종가 : %s, 시가 : %s' %(coin.key, str(day_avg_price), str(today_price), str(cur_price)))
+        msg = str('매수대기 coin : %s, 평균가 : %s, 어제종가 : %s, 시가 : %s' %(coin.key, str(day_avg_price), str(today_price), str(cur_price)))
         pprint.pprint(msg)
         log_helper.WriteLog(msg)
 
@@ -121,7 +121,7 @@ def is_time_to_buy(coin, cur_price, days, isLog) :
 def is_time_to_sell(coin, cur_price, target_price, k, isLog) :
     t = (target_price * (1 + (k / 100)))
     if isLog :
-        msg = str('coin : %s, 시가 : %s, 목표가 : %s' %(coin.key, str(cur_price), str(t)))
+        msg = str('매도대기 coin : %s, 시가 : %s, 목표가 : %s' %(coin.key, str(cur_price), str(t)))
         log_helper.WriteLog(msg)
 
     return cur_price >= (target_price * (1 + (k / 100)))
@@ -144,9 +144,9 @@ def allocate_coins(coins, max_allocation, upbit, min_buy) :
         for c in coins :
             if c.status == CoinStatus.none :
                 buy_price = max(avg_allocation, min_buy)
-                if allocations >= buy_price :
+                if total_allocations >= buy_price :
                     c.allocation = buy_price
-                    allocations = allocations - buy_price
+                    total_allocations = total_allocations - buy_price
                     c.status = CoinStatus.buy
 
 
@@ -166,12 +166,9 @@ def main(argv) :
     fees = 0.05 # 수수료 (%)
     plus_per = 1 # 수익률 (%)
 
-    print(len(argv))
-    print(argv)
     # aguments 가 있을 경우
     if len(argv) > 1 :
-        if len(argv) == 6 :
-            print(argv)            
+        if len(argv) == 6 :     
             min_buy = int(argv[1])
             max_allocation = int(argv[2])
             day_count = int(argv[3])
@@ -179,7 +176,7 @@ def main(argv) :
             plus_per = float(argv[5])       
         else :
             msg = 'arguments 개수는 0개 또는 5개 이어야 합니다.'
-            print(msg)         
+            pprint.pprint(msg)         
             log_helper.WriteLog(msg)   
             return
 
@@ -205,7 +202,6 @@ def main(argv) :
         time_to_log_count = time_to_log_count + 1
 
         allocate_coins(coins, max_allocation, upbit, min_buy)
-
         # 매수
         for c in coins :
             time.sleep(1)
