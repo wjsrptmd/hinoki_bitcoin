@@ -1,4 +1,4 @@
-access_file = open("my_acces.txt")
+access_file = open("my_access.txt")
 lines = access_file.readlines()
 
 def get_access() :
