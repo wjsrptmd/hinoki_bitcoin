@@ -101,11 +101,10 @@ def get_last_min_price(df) :
         min_val = -1
     return min_val
 
-def is_time_to_buy(coin, cur_price, diff, isLog) :    
-    df = pyupbit.get_ohlcv(coin.krw_key(), interval="minute1", count=10)
+def is_time_to_buy(coin, df, cur_price, diff, isLog) :    
     min_val = get_last_min_price(df)
     ret = False
-    if min_val > 0 and cur_price < coin.sell_market:
+    if min_val > 0 and (coin.sell_market == 0 or cur_price < coin.sell_market):
         if cur_price >= min_val and cur_price <= min_val * (1 + (diff/100)) :
             ret = True
     
@@ -133,10 +132,9 @@ def is_down_flow(df) :
 
     return isDown
 
-def is_time_to_sell(coin, cur_price, isLog) :
-    df = pyupbit.get_ohlcv(coin.krw_key(), interval="minute1", count=10)
+def is_time_to_sell(coin, df, cur_price, isLog) :
     ret = False
-    cm = coin.buy_market * (1.0011)
+    cm = coin.buy_market * (1.002)
     isDown = False
     if is_down_flow(df) :
         isDown = True
@@ -220,20 +218,21 @@ def main(argv) :
     
     isFinish = False
     while isFinish == False :
-        try :
-            is_log = False
-            if time_to_log_count >= time_to_log_count_limit :
-                is_log = True
-                time_to_log_count = 0
-                log_helper.WriteLog(' ')
-            time_to_log_count = time_to_log_count + 1
-    
-            allocate_coins(coins, max_allocation, upbit)
-            # 매수
-            for c in coins :         
+        is_log = False
+        if time_to_log_count >= time_to_log_count_limit :
+            is_log = True
+            time_to_log_count = 0
+            log_helper.WriteLog(' ')
+        time_to_log_count = time_to_log_count + 1
+
+        allocate_coins(coins, max_allocation, upbit)
+        # 매수
+        for c in coins :   
+            try :    
+                df = pyupbit.get_ohlcv(c.krw_key(), interval="minute1", count=10)  
                 cur_price = pyupbit.get_current_price(c.krw_key())
                 if c.status == CoinStatus.buy :
-                    if is_time_to_buy(c, cur_price, buy_diff, is_log) :
+                    if is_time_to_buy(c, df, cur_price, buy_diff, is_log) :
                         buy_money = c.allocation
                         ret = upbit.buy_market_order(c.krw_key(), buy_money)
                         if ret is None :
@@ -244,12 +243,10 @@ def main(argv) :
                         c.status = CoinStatus.sell
                         c.buy_money = buy_money
                         c.buy_market = cur_price
-    
                         msg = str('[매수] coin : %s\t\t%s 원\t\t%s 원' %(c.key, str(c.buy_money), str(c.buy_market)))
                         log_helper.WriteLog(msg)
-                        
                 elif c.status == CoinStatus.sell :
-                    if is_time_to_sell(c, cur_price, is_log) :
+                    if is_time_to_sell(c, df, cur_price, is_log) :
                         balance = upbit.get_balance(c.key)          
                         sell_money = balance * cur_price
                         if c.allocation >= min_buy :
@@ -265,14 +262,11 @@ def main(argv) :
                             diff = (c.sell_market - c.buy_market) * balance * (1 - (fees / 100))
                             msg = str('[매도] coin : %s\t\t차익 : %s 원\t\t%s 원\t\t%s' %(c.key, str(diff), str(c.sell_money), str(c.sell_market)))
                             log_helper.WriteLog(msg)
-
                 write_json_file(coins, json_file)
                 time.sleep(0.1)
-    
-        except Exception as e :
-            msg = str('Error : ' + str(e))
-            log_helper.WriteLog(msg)    
-        
+            except Exception as e :
+                msg = str('Error : ' + str(e))
+                log_helper.WriteLog(msg)
         time.sleep(sleep_time)
         isFinish = is_end(coins)
 
