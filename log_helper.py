@@ -1,5 +1,6 @@
 import os
 import datetime
+import pprint
 
 def WriteLog(msg) :
     now = datetime.datetime.now()
@@ -11,3 +12,5 @@ def WriteLog(msg) :
     now_time = now.strftime('%Y-%m-%d %H:%M:%S    ')
     f.write(now_time + msg + '\n')    
     f.close()
+
+    pprint.pprint(msg)
