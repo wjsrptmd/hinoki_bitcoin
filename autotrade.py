@@ -12,6 +12,7 @@ from enum_class import CoinStatus
 from coin import COIN
 
 sleep_time = 1
+buy_count = 5
 
 def write_json_file(coins, json_file) :
     data = {}
@@ -23,12 +24,14 @@ def write_json_file(coins, json_file) :
         json.dump(data, f)
     return data
 
-def get_coin_list(upbit, json_file) :
+def get_coin_list(upbit) :
     orders = order_list.get_order_list()
     balances = upbit.get_balances()
     ret = []
-    for order in orders :
-        ret.append(COIN(order))
+    for key in orders :
+        c = COIN(key)
+        c.status = CoinStatus.buy
+        ret.append(c)
 
     for b in balances :
         coin_name = b['currency']
@@ -45,19 +48,9 @@ def get_coin_list(upbit, json_file) :
 
         if isIn == False :
             new_coin = COIN(coin_name)
-            coin.status = CoinStatus.sell
-            coin.buy_market = float(b['avg_buy_price'])
-            coin.buy_money = float(b['balance']) * coin.buy_market
-            ret.append[new_coin]
+            new_coin.status = CoinStatus.end
+            ret.append(new_coin)
 
-    f = open(json_file, 'r')
-    data = json.load(f)
-    for coin in ret :
-        if coin.status == CoinStatus.sell :
-            if coin.key in data :
-                coin.setJsonData(data[coin.key])
-    
-    f.close()
     return ret
 
 def get_total_allocation(upbit) :
@@ -104,14 +97,21 @@ def get_last_min_price(df) :
 def is_time_to_buy(coin, df, cur_price, diff, isLog) :    
     min_val = get_last_min_price(df)
     ret = False
-    if min_val > 0 and (coin.sell_market == 0 or cur_price < coin.sell_market):
+
+    if min_val > 0 :
         if cur_price >= min_val and cur_price <= min_val * (1 + (diff/100)) :
             ret = True
     
     if isLog or ret :
         msg = str('매수대기 coin : %s, 변곡점 가격 : %f, 현재가격 : %f,  할당금액 : %f' %(coin.key, min_val, cur_price, coin.allocation))
         log_helper.WriteLog(msg)
-    
+
+    if ret and coin.count > 0 :
+        coin.count = coin.count - 1
+
+    if coin.count > 0 :
+        ret = False
+
     return ret
 
 def is_down_flow(df) :
@@ -132,31 +132,21 @@ def is_down_flow(df) :
 
     return isDown
 
-def is_time_to_sell(coin, df, cur_price, isLog) :
+def is_time_to_sell(coin, cur_price, diff, isLog) :
     ret = False
-    cm = coin.buy_market * (1.002)
-    isDown = False
-    if is_down_flow(df) :
-        isDown = True
-        if cm <= cur_price : 
-            ret = True
-    
-    down_str = '상승중'
-    if isDown :
-        down_str = '하락중'
-
+    cm = coin.buy_market * (1 + (diff / 100))
     if isLog or ret:
-        msg = str('매도대기 coin : %s, 매수가 %f 원, 시가 %f 원, %s' %(coin.key, coin.buy_market, cur_price, down_str))
+        msg = str('매도대기 coin : %s, 매도 목표가 %f 원, 시가 %f 원' %(coin.key, cm, cur_price))
         log_helper.WriteLog(msg)
+
     return ret
 
 def allocate_coins(coins, max_allocation, upbit) :
     allocation_count = 0
     for c in coins :
-        if c.status != CoinStatus.sell :
+        if c.status == CoinStatus.buy :
             allocation_count += 1
             c.allocation = 0
-            c.status = CoinStatus.none
     
     # 사용 가능 금액
     total_allocations = get_total_allocation(upbit)
@@ -166,12 +156,11 @@ def allocate_coins(coins, max_allocation, upbit) :
 
     # allocation 할당
     for c in coins :
-        if c.status == CoinStatus.none :
+        if c.status == CoinStatus.buy :
             buy_price = min(avg_allocation, max_allocation)
             if total_allocations >= buy_price :
                 c.allocation = buy_price
                 total_allocations = total_allocations - buy_price
-                c.status = CoinStatus.buy
 
 
 def main(argv) :
@@ -188,16 +177,18 @@ def main(argv) :
     min_buy = 5000 # 최소 주문금액 (단위 : 원)
     max_allocation = 60000 # 최대 주문금액 (단위 : 원) 
     buy_diff = 1 # 매수 오차 (%)
+    sell_diff = 1 # 매도 오차 (%)
     fees = 0.05 # 수수료 (%)
 
     # aguments 가 있을 경우
     if len(argv) > 1 :
-        if len(argv) == 4 :     
+        if len(argv) == 5 :     
             max_allocation = int(argv[1])
             buy_diff = float(argv[2])
-            fees = float(argv[3])     
+            sell_diff = float(argv[3])
+            fees = float(argv[4])     
         else :
-            msg = 'arguments 개수는 0개 또는 3개 이어야 합니다.'
+            msg = 'arguments 개수는 0개 또는 4개 이어야 합니다.'
             log_helper.WriteLog(msg)   
             return
 
@@ -211,8 +202,8 @@ def main(argv) :
     upbit = pyupbit.Upbit(a_key, s_key)
 
     # 내가 사고자 하는 코인 with 이미 매수한 코인
-    coins = get_coin_list(upbit, json_file)
-
+    coins = get_coin_list(upbit)
+    
     time_to_log_count_limit = 1
     time_to_log_count = time_to_log_count_limit
     
@@ -226,14 +217,17 @@ def main(argv) :
         time_to_log_count = time_to_log_count + 1
 
         allocate_coins(coins, max_allocation, upbit)
+
         # 매수
         for c in coins :   
-            try :    
-                df = pyupbit.get_ohlcv(c.krw_key(), interval="minute1", count=10)  
+            try :
+                msg = ''
                 cur_price = pyupbit.get_current_price(c.krw_key())
+
                 if c.status == CoinStatus.buy :
-                    if is_time_to_buy(c, df, cur_price, buy_diff, is_log) :
-                        buy_money = c.allocation
+                    df = pyupbit.get_ohlcv(c.krw_key(), interval="minute1", count=20)  
+                    if c.allocation >= min_buy and is_time_to_buy(c, df, cur_price, buy_diff, is_log) :
+                        buy_money = c.allocation * (0.9)
                         ret = upbit.buy_market_order(c.krw_key(), buy_money)
                         if ret is None :
                             log_helper.WriteLog("Error : 매수 실패")
@@ -245,23 +239,37 @@ def main(argv) :
                         c.buy_market = cur_price
                         msg = str('[매수] coin : %s\t\t%s 원\t\t%s 원' %(c.key, str(c.buy_money), str(c.buy_market)))
                         log_helper.WriteLog(msg)
+
                 elif c.status == CoinStatus.sell :
-                    if is_time_to_sell(c, df, cur_price, is_log) :
+                    if is_time_to_sell(c, cur_price, sell_diff, is_log) :
                         balance = upbit.get_balance(c.key)          
                         sell_money = balance * cur_price
-                        if c.allocation >= min_buy :
-                            ret = upbit.sell_market_order(c.krw_key(), balance)
-                            if ret is None :
-                                log_helper.WriteLog("Error : 매도 실패")
-                                log_helper.WriteLog(ret)
-                                continue
-                            
-                            c.status = CoinStatus.none
-                            c.sell_money = sell_money
-                            c.sell_market = cur_price
-                            diff = (c.sell_market - c.buy_market) * balance * (1 - (fees / 100))
-                            msg = str('[매도] coin : %s\t\t차익 : %s 원\t\t%s 원\t\t%s' %(c.key, str(diff), str(c.sell_money), str(c.sell_market)))
-                            log_helper.WriteLog(msg)
+                        ret = upbit.sell_market_order(c.krw_key(), balance)
+                        if ret is None :
+                            log_helper.WriteLog("Error : 매도 실패")
+                            log_helper.WriteLog(ret)
+                            continue
+                        c.status = CoinStatus.none
+                        c.sell_money = sell_money
+                        c.sell_market = cur_price
+                        c.count = buy_count
+                        diff = (c.sell_market - c.buy_market) * balance * (1 - (fees / 100))
+                        msg = str('[매도] coin : %s\t\t차익 : %s 원\t\t%s 원\t\t%s' %(c.key, str(diff), str(c.sell_money), str(c.sell_market)))
+                        log_helper.WriteLog(msg)
+
+                elif c.status == CoinStatus.end :
+                    balance = upbit.get_balance(c.key)          
+                    sell_money = balance * cur_price
+                    ret = upbit.sell_market_order(c.krw_key(), balance)
+                    if ret is None :
+                        log_helper.WriteLog("Error : 매도 실패")
+                        log_helper.WriteLog(ret)
+                        continue
+                    c.status = CoinStatus.none
+                    diff = (c.sell_market - c.buy_market) * balance * (1 - (fees / 100))
+                    msg = str('[매도] coin : %s\t\t차익 : %s 원\t\t%s 원\t\t%s' %(c.key, str(diff), str(c.sell_money), str(c.sell_market)))
+                    log_helper.WriteLog(msg)
+
                 write_json_file(coins, json_file)
                 time.sleep(0.1)
             except Exception as e :
