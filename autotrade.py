@@ -1,5 +1,6 @@
 import time
 import sys
+from turtle import isdown
 import pyupbit
 import access_keys
 import order_list
@@ -12,7 +13,7 @@ from enum_class import CoinStatus
 from coin import COIN
 
 sleep_time = 1
-buy_count = 5
+buy_count = 30
 
 def write_json_file(coins, json_file) :
     data = {}
@@ -76,7 +77,7 @@ def is_end(coins) :
     return ret
 
 def get_last_min_price(df) :
-    min_val = -1
+    min_val = -1.0
     val = -1
     isUp = True
     size = len(df)
@@ -84,14 +85,15 @@ def get_last_min_price(df) :
         cur_val = (df['open'][i] + df['close'][i]) / 2
         if val < cur_val :
             if isUp == False :
-                min_val = val
+                min_val = min(df['open'][i], df['close'][i])
             isUp = True
         elif val > cur_val :
             isUp = False
         val = cur_val
     
     if isUp == False :
-        min_val = -1
+        min_val = -1.0
+
     return min_val
 
 def is_time_to_buy(coin, df, cur_price, diff, isLog) :    
@@ -101,16 +103,16 @@ def is_time_to_buy(coin, df, cur_price, diff, isLog) :
     if min_val > 0 :
         if cur_price >= min_val and cur_price <= min_val * (1 + (diff/100)) :
             ret = True
-    
-    if isLog or ret :
-        msg = str('매수대기 coin : %s, 변곡점 가격 : %f, 현재가격 : %f,  할당금액 : %f' %(coin.key, min_val, cur_price, coin.allocation))
-        log_helper.WriteLog(msg)
 
-    if ret and coin.count > 0 :
+    if coin.count > 0 :
         coin.count = coin.count - 1
 
     if coin.count > 0 :
         ret = False
+
+    if isLog or ret :
+        msg = str('매수대기 coin : %s, 변곡점 가격 : %f, 현재가격 : %f,  할당금액 : %f' %(coin.key, min_val, cur_price, coin.allocation))
+        log_helper.WriteLog(msg)
 
     return ret
 
@@ -135,8 +137,20 @@ def is_down_flow(df) :
 def is_time_to_sell(coin, cur_price, diff, isLog) :
     ret = False
     cm = coin.buy_market * (1 + (diff / 100))
+    isDown = coin.prev_price > cur_price
+    down_str = '-'
+
+    if isDown :
+        down_str = '▽'
+        if cm < cur_price :
+            ret = True
+    elif coin.prev_price < cur_price :
+        down_str = '△'
+
+    coin.prev_price = cur_price
+
     if isLog or ret:
-        msg = str('매도대기 coin : %s, 매도 목표가 %f 원, 시가 %f 원' %(coin.key, cm, cur_price))
+        msg = str('매도대기 coin : %s, 매도 목표가 %f 원, 시가 %f 원 %s' %(coin.key, cm, cur_price, down_str))
         log_helper.WriteLog(msg)
 
     return ret
@@ -192,8 +206,8 @@ def main(argv) :
             log_helper.WriteLog(msg)   
             return
 
-    msg = str('최대 주문금액(코인하나당) %d, 매수 오차 %f, 수수료 %f' \
-            %(max_allocation, buy_diff, fees))
+    msg = str('최대 주문금액(코인하나당) %d, 매수 오차 %f, 매도 오차 %f, 수수료 %f' \
+            %(max_allocation, buy_diff, sell_diff, fees))
     log_helper.WriteLog(msg)
 
     # upbit 인스턴스 생성
@@ -224,7 +238,7 @@ def main(argv) :
                 msg = ''
                 cur_price = pyupbit.get_current_price(c.krw_key())
 
-                if c.status == CoinStatus.buy :
+                if c.status == CoinStatus.buy :                    
                     df = pyupbit.get_ohlcv(c.krw_key(), interval="minute1", count=20)  
                     if c.allocation >= min_buy and is_time_to_buy(c, df, cur_price, buy_diff, is_log) :
                         buy_money = c.allocation * (0.9)
@@ -235,7 +249,7 @@ def main(argv) :
                             continue
                         
                         c.status = CoinStatus.sell
-                        c.buy_money = buy_money
+                        c.buy_money = buy_money * (1 + (fees) / 100)
                         c.buy_market = cur_price
                         msg = str('[매수] coin : %s\t\t%s 원\t\t%s 원' %(c.key, str(c.buy_money), str(c.buy_market)))
                         log_helper.WriteLog(msg)
@@ -249,7 +263,7 @@ def main(argv) :
                             log_helper.WriteLog("Error : 매도 실패")
                             log_helper.WriteLog(ret)
                             continue
-                        c.status = CoinStatus.none
+                        c.status = CoinStatus.buy
                         c.sell_money = sell_money
                         c.sell_market = cur_price
                         c.count = buy_count
