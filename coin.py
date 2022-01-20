@@ -12,6 +12,7 @@ class COIN :
         self.sell_money = 0
         self.sell_market = 0
         self.count = 0
+        self.prev_price = 0
 
     def setJsonData(self, jsonObj) :
         self.status = stringToEnum(jsonObj.get(str_def.status))
@@ -21,6 +22,7 @@ class COIN :
         self.sell_money = int(jsonObj.get(str_def.sell_money))
         self.sell_market = int(jsonObj.get(str_def.sell_market))
         self.count = 0
+        self.prev_price = 0
 
     def getJsonData(self) :
         data = {}
